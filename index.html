@@ -106,54 +106,48 @@
         // 3. 예매하기 (즉시 반응 로직 포함)
         // 4. 예매 데이터 전송 (중복 체크 강화 버전)
         async function sendBooking() {
-            const name = document.getElementById('user-name').value;
-            const phone = document.getElementById('user-phone').value;
-            const submitBtn = document.getElementById('submit-btn');
+    const name = document.getElementById('user-name').value;
+    const phone = document.getElementById('user-phone').value;
+    const btn = document.getElementById('submit-btn'); // 버튼 가져오기
 
-            if (selectedSeatsList.length === 0) return alert("좌석을 선택해주세요!");
-            if (!name || !phone) return alert("이름과 연락처를 모두 입력해주세요!");
+    if (selectedSeatsList.length === 0) return alert("좌석을 선택해주세요!");
+    if (!name || !phone) return alert("이름과 연락처를 모두 입력해주세요!");
 
-            // [중복 클릭 방지] 버튼 비활성화 및 로딩 표시
-            submitBtn.disabled = true;
-            submitBtn.innerText = "처리 중...";
+    // [핵심] 연타 방지: 버튼을 누르자마자 비활성화
+    btn.disabled = true;
+    btn.innerText = "예매 처리 중...";
 
-            const params = {
-                user_name: name,
-                user_phone: phone,
-                seats: selectedSeatsList.join(', '),
-                total_price: selectedSeatsList.length * 1000
-            };
+    const params = {
+        user_name: name,
+        user_phone: phone,
+        seats: selectedSeatsList.join(', '),
+        total_price: selectedSeatsList.length * 1000
+    };
 
-            try {
-                // 1. 구글 시트에 전송 (중복 체크)
-                // 응답을 제대로 확인하기 위해 요청을 보냅니다.
-                const response = await fetch(GOOGLE_URL, {
-                    method: 'POST',
-                    body: JSON.stringify(params)
-                });
+    try {
+        // 서버에 예약 요청
+        const response = await fetch(GOOGLE_URL, {
+            method: 'POST',
+            body: JSON.stringify(params)
+        });
 
-                const result = await response.json();
+        const result = await response.json();
 
-                if (result.result === "success") {
-                    // 2. 시트 저장 성공 시에만 이메일 발송
-                    await emailjs.send(SERVICE_ID, TEMPLATE_ID, params);
-                    alert(`${name}님, 예매가 성공적으로 완료되었습니다!`);
-                    location.reload();
-                } else {
-                    // 시트에서 "error"를 보낸 경우 (이미 예약된 좌석 등)
-                    alert(result.message || "이미 예약된 좌석입니다. 다시 선택해주세요.");
-                    location.reload();
-                }
-
-            } catch (err) {
-                // 네트워크 오류나 CORS 이슈 발생 시
-                // 보통 CORS 에러가 나도 데이터는 시트에 들어가는 경우가 많으므로 
-                // 사용자에게 새로고침을 유도하여 좌석 상태를 확인하게 합니다.
-                console.error("Detail:", err);
-                alert("예매 상태를 확인합니다. 좌석이 이미 선택되었다면 다시 시도해주세요.");
-                location.reload();
-            }
+        if (result.result === "success") {
+            await emailjs.send(SERVICE_ID, TEMPLATE_ID, params);
+            alert("예매가 완료되었습니다!");
+            location.reload();
+        } else {
+            // 중복 예약일 경우 서버가 보내주는 에러 메시지 출력
+            alert(result.message);
+            location.reload();
         }
+    } catch (err) {
+        // CORS 에러가 나더라도 데이터가 들어갔을 수 있으므로 확인 유도
+        alert("예매 처리 중 통신 오류가 발생했습니다. 좌석 현황을 다시 확인합니다.");
+        location.reload();
+    }
+}
     </script>
 </body>
 </html>
