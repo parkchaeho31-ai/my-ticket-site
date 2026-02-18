@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>실시간 티켓 예매 시스템</title>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <style>
+        :root { --primary-color: #f1c40f; --bg-color: #242333; --seat-color: #444451; }
+        body { background-color: var(--bg-color); color: white; display: flex; flex-direction: column; align-items: center; font-family: 'Pretendard', sans-serif; padding: 20px; }
+        .stage { background-color: #ddd; height: 50px; width: 300px; margin: 20px 0; text-align: center; color: #333; line-height: 50px; font-weight: bold; border-radius: 5px; box-shadow: 0 0 15px rgba(255,255,255,0.5); }
+        .seat-grid { display: grid; grid-template-columns: repeat(10, 35px); gap: 8px; margin-bottom: 20px; }
+        .seat { background-color: var(--seat-color); height: 30px; width: 35px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 11px; transition: 0.2s; }
+        .seat:hover:not(.occupied) { transform: scale(1.1); background-color: #6c5ce7; }
+        .seat.selected { background-color: var(--primary-color); color: black; }
+        .seat.occupied { background-color: #ffffff; opacity: 0.2; cursor: not-allowed; pointer-events: none; }
+        .form-container { background: #3b3b4d; padding: 25px; border-radius: 12px; width: 320px; box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
+        h3 { margin-top: 0; color: var(--primary-color); }
+        label { display: block; margin-top: 10px; font-size: 14px; }
+        input { width: 100%; padding: 10px; box-sizing: border-box; border-radius: 6px; border: none; margin-top: 5px; background: #242333; color: white; }
+        .info-panel { margin: 15px 0; padding: 10px; border-top: 1px solid #555; font-size: 14px; }
+        button { width: 100%; padding: 12px; background: var(--primary-color); border: none; font-weight: bold; cursor: pointer; border-radius: 6px; font-size: 16px; transition: 0.3s; }
+        button:hover { background: #d4ac0d; }
+    </style>
+</head>
+<body>
+
+    <div class="stage">무대 (STAGE)</div>
+    <div id="seat-container" class="seat-grid"></div>
+
+    <div class="form-container">
+        <h3>예약 정보 입력</h3>
+        <label>이름</label>
+        <input type="text" id="user-name" placeholder="성함을 입력하세요">
+        <label>연락처</label>
+        <input type="tel" id="user-phone" placeholder="010-0000-0000">
+        
+        <div class="info-panel">
+            <p>선택 좌석: <span id="selected-seats" style="color: #f1c40f;">없음</span></p>
+            <p>총 결제 금액: <span style="color: #f1c40f;">₩<span id="total-price">0</span></span></p>
+        </div>
+        
+        <button onclick="sendBooking()">예매 완료하기</button>
+    </div>
+
+    <script>
+        // === [개인 설정 영역] ===
+        const PUBLIC_KEY = "G_YDKjSv7nL1e8KP5";
+        const SERVICE_ID = "service_zqkqwdj";
+        const TEMPLATE_ID = "template_sxfdet8";
+        const GOOGLE_URL = "https://script.google.com/macros/s/AKfycbxoOzjK5J8tGOADXxJXdd9Y9Z4ZdGCjTC-MAVHImpyiAqdt1jVfMUaglbJ1NAt5m_wL/exec";
+        // ========================
+
+        emailjs.init(PUBLIC_KEY);
+        const container = document.getElementById('seat-container');
+        let selectedSeatsList = [];
+
+        // 1. 좌석 초기 생성 (100개)
+        for (let i = 0; i < 100; i++) {
+            const seat = document.createElement('div');
+            seat.classList.add('seat');
+            const row = String.fromCharCode(65 + Math.floor(i / 10));
+            const col = (i % 10) + 1;
+            seat.innerText = `${row}${col}`;
+            
+            seat.addEventListener('click', () => {
+                if (!seat.classList.contains('occupied')) {
+                    seat.classList.toggle('selected');
+                    updateUI();
+                }
+            });
+            container.appendChild(seat);
+        }
+
+        // 2. 구글 시트에서 이미 예매된 좌석 불러오기
+        async function loadBookedSeats() {
+            try {
+                // 뒤에 시간을 붙여서 매번 새로운 데이터를 가져오도록 강제합니다 (캐시 방지)
+                const res = await fetch(GOOGLE_URL + "?t=" + new Date().getTime());
+                const booked = await res.json();
+                
+                console.log("예약된 좌석 목록:", booked); // F12 콘솔창에서 확인 가능
+
+                document.querySelectorAll('.seat').forEach(s => {
+                    // 시트에서 가져온 목록에 현재 좌석 번호가 있으면 하얗게 막음
+                    if (booked.includes(s.innerText)) {
+                        s.classList.add('occupied');
+                    }
+                });
+            } catch (e) {
+                console.error("데이터 불러오기 실패:", e);
+            }
+        }
+        loadBookedSeats();
+
+        // 3. UI 업데이트 (선택 좌석 및 가격)
+        function updateUI() {
+            const selected = document.querySelectorAll('.seat.selected');
+            selectedSeatsList = [...selected].map(s => s.innerText);
+            document.getElementById('selected-seats').innerText = selectedSeatsList.join(', ') || '없음';
+            document.getElementById('total-price').innerText = (selectedSeatsList.length * 1000).toLocaleString();
+        }
+
+        // 4. 예매 데이터 전송 (EmailJS + Google Sheet)
+        async function sendBooking() {
+            const name = document.getElementById('user-name').value;
+            const phone = document.getElementById('user-phone').value;
+
+            if (selectedSeatsList.length === 0) return alert("좌석을 선택해주세요!");
+            if (!name || !phone) return alert("이름과 연락처를 모두 입력해주세요!");
+
+            const params = {
+                user_name: name,
+                user_phone: phone,
+                seats: selectedSeatsList.join(', '),
+                total_price: selectedSeatsList.length * 1000
+            };
+
+            try {
+                // 이메일 발송
+                await emailjs.send(SERVICE_ID, TEMPLATE_ID, params);
+                
+                // 구글 시트 저장 (안정적인 전송을 위해 no-cors 모드 사용)
+                await fetch(GOOGLE_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: JSON.stringify(params)
+                });
+
+                alert(`${name}님, 예매가 성공적으로 완료되었습니다!`);
+                location.reload(); // 성공 후 새로고침하여 좌석 업데이트
+            } catch (err) {
+                alert("예매 중 오류가 발생했습니다. 다시 시도해주세요.");
+                console.error(err);
+            }
+        }
+    </script>
+</body>
+</html>
