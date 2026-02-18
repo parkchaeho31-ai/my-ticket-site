@@ -108,16 +108,14 @@
         async function sendBooking() {
             const name = document.getElementById('user-name').value;
             const phone = document.getElementById('user-phone').value;
+            const submitBtn = document.getElementById('submit-btn');
 
             if (selectedSeatsList.length === 0) return alert("좌석을 선택해주세요!");
             if (!name || !phone) return alert("이름과 연락처를 모두 입력해주세요!");
 
-            // [체감 속도 개선] 누르자마자 즉시 좌석 색상 변경
-            const currentSelected = document.querySelectorAll('.seat.selected');
-            currentSelected.forEach(s => {
-                s.classList.remove('selected');
-                s.classList.add('occupied');
-            });
+            // [중복 클릭 방지] 버튼 비활성화 및 로딩 표시
+            submitBtn.disabled = true;
+            submitBtn.innerText = "처리 중...";
 
             const params = {
                 user_name: name,
@@ -127,25 +125,33 @@
             };
 
             try {
-                // 1. 구글 시트에 먼저 전송 및 중복 확인
-                // ※ mode: 'no-cors'를 제거해야 서버의 응답(중복 에러 등)을 받아올 수 있습니다.
+                // 1. 구글 시트에 전송 (중복 체크)
+                // 응답을 제대로 확인하기 위해 요청을 보냅니다.
                 const response = await fetch(GOOGLE_URL, {
                     method: 'POST',
                     body: JSON.stringify(params)
                 });
 
-                // 구글 시트 배포 설정에 따라 응답 방식이 다를 수 있어 
-                // 가장 확실한 방법은 전송 후 다시 데이터를 불러와 내 좌석이 있는지 확인하는 것입니다.
-                
-                // 2. 이메일 발송
-                await emailjs.send(SERVICE_ID, TEMPLATE_ID, params);
+                const result = await response.json();
 
-                alert(`${name}님, 예매가 성공적으로 완료되었습니다!`);
-                location.reload(); 
+                if (result.result === "success") {
+                    // 2. 시트 저장 성공 시에만 이메일 발송
+                    await emailjs.send(SERVICE_ID, TEMPLATE_ID, params);
+                    alert(`${name}님, 예매가 성공적으로 완료되었습니다!`);
+                    location.reload();
+                } else {
+                    // 시트에서 "error"를 보낸 경우 (이미 예약된 좌석 등)
+                    alert(result.message || "이미 예약된 좌석입니다. 다시 선택해주세요.");
+                    location.reload();
+                }
+
             } catch (err) {
-                alert("예매 처리 중 오류가 발생했거나 이미 선점된 좌석입니다. 다시 확인해 주세요.");
+                // 네트워크 오류나 CORS 이슈 발생 시
+                // 보통 CORS 에러가 나도 데이터는 시트에 들어가는 경우가 많으므로 
+                // 사용자에게 새로고침을 유도하여 좌석 상태를 확인하게 합니다.
+                console.error("Detail:", err);
+                alert("예매 상태를 확인합니다. 좌석이 이미 선택되었다면 다시 시도해주세요.");
                 location.reload();
-                console.error(err);
             }
         }
     </script>
